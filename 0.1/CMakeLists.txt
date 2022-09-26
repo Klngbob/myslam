@@ -28,6 +28,7 @@ set( THIRD_PARTY_LIBS
     g2o_core g2o_stuff g2o_types_sba    
 )
 
+
 ############ source and test ##############
 include_directories(${PROJECT_SOURCE_DIR}/include)
 add_subdirectory(src)

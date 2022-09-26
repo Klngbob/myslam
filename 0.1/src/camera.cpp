@@ -35,7 +35,7 @@ Vector3d Camera::pixel2camera(const Vector2d& p_p, double depth)
     );
 }
 
-Vector3d Camera::pixel2world(const Vector2d& p_p, const SE3& T_c_w, double depth=1)
+Vector3d Camera::pixel2world(const Vector2d& p_p, const SE3& T_c_w, double depth)
 {
     return camera2world(pixel2camera(p_p, depth), T_c_w);
 }
