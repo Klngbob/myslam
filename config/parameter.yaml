@@ -1,1 +1,23 @@
-Camera.fx: 500
+%YAML:1.0
+# data
+# the tum dataset directory, change it to yours! 
+dataset_dir: /home/kingbob/Datasets/rgbd_dataset_freiburg1_xyz
+
+# camera intrinsics
+# fr1 (https://vision.in.tum.de/data/datasets/rgbd-dataset/file_formats#intrinsic_camera_calibration_of_the_kinect)
+camera.fx: 525.0
+camera.fy: 525.0
+camera.cx: 319.5
+camera.cy: 239.5
+
+camera.depth_scale: 5000
+
+# VO paras
+number_of_features: 500
+scale_factor: 1.2
+level_pyramid: 8
+match_ratio: 2.0
+max_num_lost: 10
+min_inliers: 10
+key_frame_min_rot: 0.1
+key_frame_min_trans: 0.1
