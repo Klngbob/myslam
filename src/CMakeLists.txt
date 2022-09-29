@@ -5,6 +5,7 @@ add_library(myslam SHARED
     map.cpp
     mappoint.cpp
     visual_odometry.cpp
+    g2o_types.cpp
 )
 
 target_link_libraries(myslam

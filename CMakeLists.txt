@@ -3,7 +3,7 @@ project(myslam)
 
 set(CMAKE_CXX_COMPLIER "g++")
 set(CMAKE_BUILD_TYPE "Debug")
-set(CMAKE_CXX_FLAGS "-std=c++11 -march=native -O0 -Wall -g -ggdb")
+set(CMAKE_CXX_FLAGS "-std=c++11 -O0 -Wall -g -ggdb")
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
