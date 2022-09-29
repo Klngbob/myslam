@@ -23,13 +23,16 @@ public:
     Frame::Ptr  curr_; // 当前帧
 
     cv::Ptr<cv::ORB> orb_; // ORB detector and computer
-    vector<cv::Point3f> pts_3d_ref_; // 参考帧中的3d点
+    // vector<cv::Point3f> pts_3d_ref_; // 参考帧中的3d点
     vector<cv::KeyPoint> keypoints_curr_; // 当前帧中的关键点
     Mat descriptors_curr_; // 当前帧中的描述子
-    Mat descriptors_ref_;  // 参考帧中的描述子
-    vector<cv::DMatch> feature_matches_; // 描述子匹配关系
+    // Mat descriptors_ref_;  // 参考帧中的描述子
+    // vector<cv::DMatch> feature_matches_; // 描述子匹配关系
+    cv::FlannBasedMatcher matcher_flann_; // 快速最邻近算法匹配
+    vector<MapPoint::Ptr> match_3dpts_;   // 匹配的3D点
+    vector<int>           match_2dkp_index_; // 匹配的2D点索引（当前帧中关键点的索引）
 
-    SE3 T_c_r_estimated_; // 当前帧的估计位姿
+    SE3 T_c_w_estimated_; // 当前帧的估计位姿
     int num_inliers_;    // icp中内点数
     int num_lost_;       // 丢失次数
 
@@ -43,6 +46,7 @@ public:
 
     double key_frame_min_rot_; // 两个关键帧的最小旋转
     double key_frame_min_trans_; // 两个关键帧的最小平移
+    double map_point_erase_ratio_;  // 移除地图点的比例
 public:
     VisualOdometry();
     ~VisualOdometry();
@@ -55,11 +59,15 @@ protected:
     void computeDescriptors(); // 计算描述子
     void featureMatching();    // 特征点匹配并筛选
     void poseEstimationPnP();
-    void setRef3DPoints();
+    // void setRef3DPoints();
+    void optimizeMap();        // 地图优化
     // 关键帧的功能函数
     void addKeyFrame();
+    void addMapPoints();
     bool checkEstimatedPose();
     bool checkKeyFrame();
+
+    double getViewAngle(Frame::Ptr frame, MapPoint::Ptr point);
 };
 }
 
