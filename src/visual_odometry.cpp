@@ -1,5 +1,8 @@
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <boost/timer.hpp>
+#include <algorithm>
 
 #include "myslam/visual_odometry.h"
 #include "myslam/config.h"
@@ -103,132 +106,244 @@ void VisualOdometry::computeDescriptors()
 // 特征匹配
 void VisualOdometry::featureMatching()
 {
+    // boost::timer timer;
+    // vector<cv::DMatch> matches;
+
+    // // 建立一个保存描述子的map矩阵，保存匹配需要地图点的描述子(行向量)
+    // Mat desp_map;
+    // // 暂时存放在当前帧视野以内的mappoint
+    // vector<MapPoint::Ptr> candidate;
+    // // 遍历所有地图点，将符合条件的mappoint放入candidate，将描述子信息放入desp_map
+    // for(auto& allpoints: map_->map_points_)
+    // {
+    //     MapPoint::Ptr& p = allpoints.second;
+    //     // 检测这个点（世界坐标系）是否在当前帧视野内
+    //     if(curr_->isInFrame(p->pos_))
+    //     {
+    //         // add to candidate
+    //         p->visible_times_++;
+    //         candidate.push_back(p);
+    //         // Mat 也可以push_back
+    //         desp_map.push_back(p->descriptor_);
+    //     }
+    // }
+
+    // // 使用新的匹配方法FlannBasedMatcher(最近邻近似匹配)，当前帧和地图直接进行匹配
+    // matcher_flann_.match(desp_map, descriptors_curr_, matches);
+
+    // float min_dis = std::min_element(
+    //     matches.begin(), matches.end(),
+    //     [](const cv::DMatch& m1, const cv::DMatch& m2){return m1.distance < m2.distance;}
+    // )->distance;
+
+    // // 
+    // match_3dpts_.clear();
+    // match_2dkp_index_.clear();
+    // for(cv::DMatch& m : matches)
+    // {
+    //     if(m.distance < max<float>(min_dis * match_ratio_, 30.0))
+    //     {
+    //         match_3dpts_.push_back(candidate[m.queryIdx]);
+    //         match_2dkp_index_.push_back(m.trainIdx);
+    //     }
+    // }
+    // cout<<"good matches: "<<match_3dpts_.size()<<endl;
+    // cout<<"match cost time: "<<timer.elapsed()<<endl;
+
     boost::timer timer;
     vector<cv::DMatch> matches;
-
-    // 建立一个保存描述子的map矩阵，保存匹配需要地图点的描述子(行向量)
+    // select the candidates in map 
     Mat desp_map;
-    // 暂时存放在当前帧视野以内的mappoint
     vector<MapPoint::Ptr> candidate;
-    // 遍历所有地图点，将符合条件的mappoint放入candidate，将描述子信息放入desp_map
-    for(auto& allpoints: map_->map_points_)
+    for ( auto& allpoints: map_->map_points_ )
     {
         MapPoint::Ptr& p = allpoints.second;
-        // 检测这个点（世界坐标系）是否在当前帧视野内
-        if(curr_->isInFrame(p->pos_))
+        // check if p in curr frame image 
+        if ( curr_->isInFrame(p->pos_) )
         {
-            // add to candidate
+            // add to candidate 
             p->visible_times_++;
-            candidate.push_back(p);
-            // Mat 也可以push_back
-            desp_map.push_back(p->descriptor_);
+            candidate.push_back( p );
+            desp_map.push_back( p->descriptor_ );
         }
     }
+    
+    matcher_flann_.match ( desp_map, descriptors_curr_, matches );
+    // select the best matches
+    float min_dis = std::min_element (
+                        matches.begin(), matches.end(),
+                        [] ( const cv::DMatch& m1, const cv::DMatch& m2 )
+    {
+        return m1.distance < m2.distance;
+    } )->distance;
 
-    // 使用新的匹配方法FlannBasedMatcher(最近邻近似匹配)，当前帧和地图直接进行匹配
-    matcher_flann_.match(desp_map, descriptors_curr_, matches);
-
-    float min_dis = std::min_element(
-        matches.begin(), matches.end(),
-        [](const cv::DMatch& m1, const cv::DMatch& m2){return m1.distance < m2.distance;}
-    )->distance;
-
-    // 
     match_3dpts_.clear();
     match_2dkp_index_.clear();
-    for(cv::DMatch& m : matches)
+    for ( cv::DMatch& m : matches )
     {
-        if(m.distance < max<float>(min_dis * match_ratio_, 30.0))
+        if ( m.distance < max<float> ( min_dis*match_ratio_, 30.0 ) )
         {
-            match_3dpts_.push_back(candidate[m.queryIdx]);
-            match_2dkp_index_.push_back(m.trainIdx);
+            match_3dpts_.push_back( candidate[m.queryIdx] );
+            match_2dkp_index_.push_back( m.trainIdx );
         }
     }
-    cout<<"good matches: "<<match_3dpts_.size()<<endl;
-    cout<<"match cost time: "<<timer.elapsed()<<endl;
+    cout<<"good matches: "<<match_3dpts_.size() <<endl;
+    cout<<"match cost time: "<<timer.elapsed() <<endl;
 }
 
-// PnP估计相机位姿
 void VisualOdometry::poseEstimationPnP()
 {
+    // construct the 3d 2d observations
     vector<cv::Point3f> pts3d;
     vector<cv::Point2f> pts2d;
-    // 去除当前帧匹配成功的2D点
-    for(int index: match_2dkp_index_)
+
+    for ( int index:match_2dkp_index_ )
     {
-        // 将当前帧中的关键点放入pts2d中
-        pts2d.push_back(keypoints_curr_[index].pt);
+        pts2d.push_back ( keypoints_curr_[index].pt );
     }
-    // 
-    for(MapPoint::Ptr pt : match_3dpts_)
+    for ( MapPoint::Ptr pt : match_3dpts_ )
     {
-        // 匹配好的3D点放进去
-        pts3d.push_back(pt->getPositionCV());
+        pts3d.push_back( pt->getPositionCV() );
     }
-    // 相机内参
-    Mat K = (cv::Mat_<double>(3, 3)<<
-        ref_->camera_->fx_, 0, ref_->camera_->cx_,
-        0,ref_->camera_->fy_, ref_->camera_->cy_,
-        0, 0, 1);
-    // 旋转、平移、内点数组
+
+    Mat K = ( cv::Mat_<double> ( 3,3 ) <<
+              ref_->camera_->fx_, 0, ref_->camera_->cx_,
+              0, ref_->camera_->fy_, ref_->camera_->cy_,
+              0,0,1
+            );
     Mat rvec, tvec, inliers;
-    cv::solvePnPRansac(pts3d, pts2d, K, Mat(), rvec, tvec, false, 100, 4.0, 0.99, inliers);
-    // 内点数为内点行数
-    num_inliers_ = inliers.rows; // ?
-    // 输出符合模型的数据个数
+    cv::solvePnPRansac ( pts3d, pts2d, K, Mat(), rvec, tvec, false, 100, 4.0, 0.99, inliers );
+    num_inliers_ = inliers.rows;
     cout<<"pnp inliers: "<<num_inliers_<<endl;
-    // 由旋转和平移构造出的当前帧相对于参考帧的变换矩阵T
-    T_c_w_estimated_ = SE3(
-        SO3(rvec.at<double>(0, 0), rvec.at<double>(1, 0), rvec.at<double>(2, 0)),
-        Vector3d(tvec.at<double>(0, 0), tvec.at<double>(1, 0), tvec.at<double>(2, 0))
-    );
+    T_c_w_estimated_ = SE3 (
+                           SO3 ( rvec.at<double> ( 0,0 ), rvec.at<double> ( 1,0 ), rvec.at<double> ( 2,0 ) ),
+                           Vector3d ( tvec.at<double> ( 0,0 ), tvec.at<double> ( 1,0 ), tvec.at<double> ( 2,0 ) )
+                       );
 
-    // 使用bundle adjustment优化估计的位姿T
-    // 1.位姿6维，观测点2维
-    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 2>> Block;
+    // using bundle adjustment to optimize the pose
+    typedef g2o::BlockSolver<g2o::BlockSolverTraits<6,2>> Block;
     Block::LinearSolverType* linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
-    Block* solver_ptr = new Block(linearSolver);
-    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+    Block* solver_ptr = new Block ( linearSolver );
+    g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg ( solver_ptr );
     g2o::SparseOptimizer optimizer;
-    optimizer.setAlgorithm(solver);
-    // 2.顶点是相机位姿pose
-    g2o::VertexSE3Expmap* pose = new g2o::VertexSE3Expmap();
-    pose->setId(0);
-    pose->setEstimate(g2o::SE3Quat(
-        T_c_w_estimated_.rotation_matrix(),
-        T_c_w_estimated_.translation()
-    ));
-    optimizer.addVertex(pose);
+    optimizer.setAlgorithm ( solver );
 
-    // 3.边是重投影误差
-    for(int i = 0; i < inliers.rows; ++i)
+    g2o::VertexSE3Expmap* pose = new g2o::VertexSE3Expmap();
+    pose->setId ( 0 );
+    pose->setEstimate ( g2o::SE3Quat (
+        T_c_w_estimated_.rotation_matrix(), T_c_w_estimated_.translation()
+    ));
+    optimizer.addVertex ( pose );
+
+    // edges
+    for ( int i=0; i<inliers.rows; i++ )
     {
-        int index = inliers.at<int>(i, 0);
-        // 3D->2D投影
+        int index = inliers.at<int> ( i,0 );
+        // 3D -> 2D projection
         EdgeProjectXYZ2UVPoseOnly* edge = new EdgeProjectXYZ2UVPoseOnly();
-        edge->setId(i);
-        edge->setVertex(0, pose);
-        // 相机参数
+        edge->setId ( i );
+        edge->setVertex ( 0, pose );
         edge->camera_ = curr_->camera_.get();
-        // 3D点
-        edge->point_ = Vector3d(pts3d[index].x, pts3d[index].y, pts3d[index].z);
-        // 测量值是2维
-        edge->setMeasurement(Vector2d(pts2d[index].x, pts2d[index].y));
-        edge->setInformation(Eigen::Matrix2d::Identity());
-        optimizer.addEdge(edge);
+        edge->point_ = Vector3d ( pts3d[index].x, pts3d[index].y, pts3d[index].z );
+        edge->setMeasurement ( Vector2d ( pts2d[index].x, pts2d[index].y ) );
+        edge->setInformation ( Eigen::Matrix2d::Identity() );
+        optimizer.addEdge ( edge );
+        // set the inlier map points 
+        match_3dpts_[index]->matched_times_++;
     }
 
-    // 4.执行优化
     optimizer.initializeOptimization();
-    optimizer.optimize(10);
+    optimizer.optimize ( 10 );
 
-    T_c_w_estimated_ = SE3(
+    T_c_w_estimated_ = SE3 (
         pose->estimate().rotation(),
         pose->estimate().translation()
     );
-
+    
     cout<<"T_c_w_estimated_: "<<endl<<T_c_w_estimated_.matrix()<<endl;
 }
+
+// PnP估计相机位姿
+// void VisualOdometry::poseEstimationPnP1()
+// {
+//     vector<cv::Point3f> pts3d;
+//     vector<cv::Point2f> pts2d;
+//     // 去除当前帧匹配成功的2D点
+//     for(int index: match_2dkp_index_)
+//     {
+//         // 将当前帧中的关键点放入pts2d中
+//         pts2d.push_back(keypoints_curr_[index].pt);
+//     }
+//     // 
+//     for(MapPoint::Ptr pt : match_3dpts_)
+//     {
+//         // 匹配好的3D点放进去
+//         pts3d.push_back(pt->getPositionCV());
+//     }
+//     // 相机内参
+//     Mat K = (cv::Mat_<double>(3, 3)<<
+//         ref_->camera_->fx_, 0, ref_->camera_->cx_,
+//         0,ref_->camera_->fy_, ref_->camera_->cy_,
+//         0, 0, 1);
+//     // 旋转、平移、内点数组
+//     Mat rvec, tvec, inliers;
+//     cv::solvePnPRansac(pts3d, pts2d, K, Mat(), rvec, tvec, false, 100, 4.0, 0.99, inliers);
+//     // 内点数为内点行数
+//     num_inliers_ = inliers.rows; // ?
+//     // 输出符合模型的数据个数
+//     cout<<"pnp inliers: "<<num_inliers_<<endl;
+//     // 由旋转和平移构造出的当前帧相对于参考帧的变换矩阵T
+//     T_c_w_estimated_ = SE3(
+//         SO3(rvec.at<double>(0, 0), rvec.at<double>(1, 0), rvec.at<double>(2, 0)),
+//         Vector3d(tvec.at<double>(0, 0), tvec.at<double>(1, 0), tvec.at<double>(2, 0))
+//     );
+
+//     // 使用bundle adjustment优化估计的位姿T
+//     // 1.位姿6维，观测点2维
+//     typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 2>> Block;
+//     Block::LinearSolverType* linearSolver = new g2o::LinearSolverDense<Block::PoseMatrixType>();
+//     Block* solver_ptr = new Block(linearSolver);
+//     g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+//     g2o::SparseOptimizer optimizer;
+//     optimizer.setAlgorithm(solver);
+//     // 2.顶点是相机位姿pose
+//     g2o::VertexSE3Expmap* pose = new g2o::VertexSE3Expmap();
+//     pose->setId(0);
+//     pose->setEstimate(g2o::SE3Quat(
+//         T_c_w_estimated_.rotation_matrix(),
+//         T_c_w_estimated_.translation()
+//     ));
+//     optimizer.addVertex(pose);
+
+//     // 3.边是重投影误差
+//     for(int i = 0; i < inliers.rows; ++i)
+//     {
+//         int index = inliers.at<int>(i, 0);
+//         // 3D->2D投影
+//         EdgeProjectXYZ2UVPoseOnly* edge = new EdgeProjectXYZ2UVPoseOnly();
+//         edge->setId(i);
+//         edge->setVertex(0, pose);
+//         // 相机参数
+//         edge->camera_ = curr_->camera_.get();
+//         // 3D点
+//         edge->point_ = Vector3d(pts3d[index].x, pts3d[index].y, pts3d[index].z);
+//         // 测量值是2维
+//         edge->setMeasurement(Vector2d(pts2d[index].x, pts2d[index].y));
+//         edge->setInformation(Eigen::Matrix2d::Identity());
+//         optimizer.addEdge(edge);
+//     }
+
+//     // 4.执行优化
+//     optimizer.initializeOptimization();
+//     optimizer.optimize(10);
+
+//     T_c_w_estimated_ = SE3(
+//         pose->estimate().rotation(),
+//         pose->estimate().translation()
+//     );
+
+//     cout<<"T_c_w_estimated_: "<<endl<<T_c_w_estimated_.matrix()<<endl;
+// }
 
 // 位姿检验模块，匹配点不能太少，运动不能太大
 bool VisualOdometry::checkEstimatedPose()

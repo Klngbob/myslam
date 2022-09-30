@@ -103,19 +103,19 @@ int main(int argc, char** argv)
         );
 
         // 地图点的投影
-        Mat img_show = color.clone();
-        for(auto& pt : vo->map_->map_points_)
-        {
-            myslam::MapPoint::Ptr p = pt.second;
-            Vector2d pixel = pFrame->camera_->world2pixel(p->pos_, pFrame->T_c_w_);
-            cv::circle(img_show, cv::Point2f(pixel(0, 0), pixel(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
-        }
+        // Mat img_show = color.clone();
+        // for(auto& pt : vo->map_->map_points_)
+        // {
+        //     myslam::MapPoint::Ptr p = pt.second;
+        //     Vector2d pixel = pFrame->camera_->world2pixel(p->pos_, pFrame->T_c_w_);
+        //     cv::circle(img_show, cv::Point2f(pixel(0, 0), pixel(1, 0)), 5, cv::Scalar(0, 255, 0), 2);
+        // }
 
-        cv::imshow("image", color);
-        cv::waitKey(1);
-        // viz可视化窗口
-        vis.setWidgetPose("Camera", M);
-        vis.spinOnce(1, false);
+        // cv::imshow("image", color);
+        // cv::waitKey(1);
+        // // viz可视化窗口
+        // vis.setWidgetPose("Camera", M);
+        // vis.spinOnce(1, false);
     }
     return 0;
 }   
